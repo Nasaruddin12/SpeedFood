@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Image, Pressable, ScrollView, Platform, Alert } from 'react-native'
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Image, Pressable, ScrollView, Platform, Alert, ActivityIndicator } from 'react-native'
 import React, { useEffect, useState } from 'react'
 import { useSelector } from 'react-redux'
 import AntDesign from 'react-native-vector-icons/AntDesign'
@@ -15,7 +15,8 @@ const App = () => {
   const category = useSelector(state => state.categories.categories)
   const [status, setStatus] = useState('view')
   const [data, setData] = useState(category)
-  const [active, setActive] = useState(category.length)
+  const [newData, setNewData] = useState(category)
+  const [active, setActive] = useState(data.length)
 
 
   useEffect(() => {
@@ -24,6 +25,7 @@ const App = () => {
 
 
   const getCategory = async () => {
+    setNewData([])
     var requestOptions = {
       method: 'GET',
       redirect: 'follow'
@@ -33,7 +35,7 @@ const App = () => {
       .then(response => response.json())
       .then(result => {
         if (result.success) {
-          setData([...data, ...result.result])
+          setNewData([...data, ...result.result])
         }
       })
       .catch(error => console.log('error', error));
@@ -42,13 +44,13 @@ const App = () => {
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}
-       
+
       >
         {status == 'view' ?
           <View>
-            <ViewCategory data={data} active={active} onPress={(i) => setActive(i)} />
+            <ViewCategory data={newData} active={active} onPress={(i) => setActive(i)} />
           </View> :
-          <AddCategory />
+          <AddCategory getCategory={() => getCategory()} />
         }
       </ScrollView>
 
@@ -112,11 +114,12 @@ const ViewCategory = ({ data, active, onPress }) => {
 
 
 
-const AddCategory = () => {
+const AddCategory = ({ getCategory }) => {
 
   const [category_name, setCategory_name] = useState('')
   const [sub_categories, setSubcategories] = useState([{ name: '' }])
   const [photo, setPhoto] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
 
   const removeLastSubCategory = () => {
     if (sub_categories.length > 1) {
@@ -141,100 +144,121 @@ const AddCategory = () => {
   };
 
   const addNewCategory = async () => {
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-
-    var raw = JSON.stringify({
-      "category_name": "Veggies",
-      "sub_cateries": sub_categories,
-      "image": {
+    if (photo) {
+      setLoading(true)
+  
+      var formdata = new FormData();
+      formdata.append("category_name", category_name);
+      sub_categories.forEach((subcategory, index) => {
+        formdata.append(`sub_cateries[${index}][name]`, subcategory.name);
+      });
+      formdata.append("image", {
         name: photo.fileName,
         type: photo.type,
-        uri: Platform.OS === 'ios' ? photo.uri.replace('file://', '') : photo.uri,
-      }
-    });
-
-    var requestOptions = {
-      method: 'POST',
-      headers: myHeaders,
-      body: raw,
-      redirect: 'follow'
-    };
-
-    await fetch("https://dmapi.ipaypro.co/app_task/categories/add", requestOptions)
-      .then(response => response.json())
-      .then(result => {
-        if (result.success) {
-          Alert.alert('Category Added Successfully')
-          setCategory_name('')
-          setPhoto(null)
-          setSubcategories([{ name: '' }])
-        } else {
-          Alert.alert(result.message)
-        }
-      })
-      .catch(error => console.log('error', error));
+        uri: Platform.OS === 'ios' ? photo.uri.replace('file://', '') : photo.uri
+      });
+  
+      var requestOptions = {
+        method: 'POST',
+        body: formdata,
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      };
+  
+      await fetch("https://dmapi.ipaypro.co/app_task/categories/add", requestOptions)
+        .then(response => response.json())
+        .then(result => {
+          if (result.success) {
+            getCategory()
+  
+            setLoading(false)
+            // Alert.alert('Category Added Successfully')
+            setCategory_name('')
+            setPhoto(null)
+            setSubcategories([{ name: '' }])
+          } else {
+            Alert.alert(result.message)
+            setLoading(false)
+          }
+        })
+        .catch(error => {
+          setLoading(false)
+          console.log('error', error)
+        });
+      
+    } else {
+      Alert.alert('Image required')
+    }
+    setLoading(false)
   }
 
   return (
-    <View style={{ marginHorizontal: width * 0.04, }}>
-      <Text style={styles.title}>Add Categories & Subcategories</Text>
-      <View
-        style={{
-          borderBottomWidth: 1,
-          borderBottomColor: 'gray',
-          marginTop: 10
-        }}></View>
-      <View>
-        <Text style={[styles.text, { marginLeft: 0, marginTop: width * 0.08 }]}>Category name</Text>
-        <CustomInputText
-          placeholder=''
-          value={category_name}
-          onChangeText={(text) => setCategory_name(text)}
-        />
-      </View>
-      <Text style={[styles.text, { marginLeft: 0, marginTop: width * 0.08 }]}>Category Image</Text>
-
-      <View style={styles.imagePickerContainer}>
-        <View style={styles.imageBox}>
-          {photo ?
-            <Image source={{ uri: photo.uri }} style={{ width: '100%', height: '100%' }} /> :
-            <FontAwesome name='image' size={25} color='gray' />
-          }
-        </View>
-        <View style={{
-          width: '50%',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <CustomButton title="Choose file" onPress={() => handleChoosePhoto()} />
-        </View>
-      </View>
-      <Text style={[styles.text, { marginLeft: 0, marginTop: width * 0.08 }]}>Create Sub-Categories Image</Text>
-      {sub_categories.map((item, i) => (
-        <View style={styles.imagePickerContainer} key={i}>
-          <View style={{ width: '83%', marginTop: 10 }}>
+    <>
+      {loading ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', }}>
+        <ActivityIndicator size='large' />
+      </View> :
+        <View style={{ marginHorizontal: width * 0.04, }}>
+          <Text style={styles.title}>Add Categories & Subcategories</Text>
+          <View
+            style={{
+              borderBottomWidth: 1,
+              borderBottomColor: 'gray',
+              marginTop: 10
+            }}></View>
+          <View>
+            <Text style={[styles.text, { marginLeft: 0, marginTop: width * 0.08 }]}>Category name</Text>
             <CustomInputText
               placeholder=''
-              value={item.name}
-              onChangeText={(text) => updateSubCategory(text, i)}
+              value={category_name}
+              onChangeText={(text) => setCategory_name(text)}
             />
           </View>
+          <Text style={[styles.text, { marginLeft: 0, marginTop: width * 0.08 }]}>Category Image</Text>
 
-          {i != sub_categories.length - 1 || i == 0 ? (
-            <View style={{ marginTop: 10 }}>
-              <AntDesign name='plussquare' size={40} color='#1E90FF' onPress={() => setSubcategories([...sub_categories, { name: '' }])} />
+          <View style={styles.imagePickerContainer}>
+            <View style={styles.imageBox}>
+              {photo ?
+                <Image source={{ uri: photo.uri }} style={{ width: '100%', height: '100%' }} /> :
+                <FontAwesome name='image' size={25} color='gray' />
+              }
             </View>
-          ) : <View >
-            <AntDesign name='minussquare' size={40} color='gray' onPress={() => removeLastSubCategory([...sub_categories, { name: '' }])} />
-          </View>}
+            <View style={{
+              width: '50%',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <CustomButton title="Choose file" onPress={() => handleChoosePhoto()} />
+            </View>
+          </View>
+          <Text style={[styles.text, { marginLeft: 0, marginTop: width * 0.08 }]}>Create Sub-Categories Image</Text>
+          {sub_categories.map((item, i) => (
+            <View style={styles.imagePickerContainer} key={i}>
+              <View style={{ width: '83%', marginTop: 10 }}>
+                <CustomInputText
+                  placeholder=''
+                  value={item.name}
+                  onChangeText={(text) => updateSubCategory(text, i)}
+                />
+              </View>
 
+              {i != sub_categories.length - 1 || i == 0 ? (
+                <View style={{ marginTop: 10 }}>
+                  <AntDesign name='plussquare' size={40} color='#1E90FF' onPress={() => setSubcategories([...sub_categories, { name: '' }])} />
+                </View>
+              ) : <View >
+                <AntDesign name='minussquare' size={40} color='gray' onPress={() => removeLastSubCategory([...sub_categories, { name: '' }])} />
+              </View>}
+
+            </View>
+          ))}
+          <View style={{ marginTop: width * 0.15 }}>
+            <CustomButton title='Add' onPress={() => addNewCategory()} />
+          </View>
         </View>
-      ))}
-      <View style={{ marginTop: width * 0.15 }}>
-        <CustomButton title='Add' onPress={() => addNewCategory()} />
-      </View>
-    </View>
+      }
+    </>
   )
 }
 
